@@ -13,7 +13,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'ERP Corporativo',
+      title: 'FinanzasPro',
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
@@ -31,49 +31,74 @@ class ErpWebViewScreen extends StatefulWidget {
 
 class _ErpWebViewScreenState extends State<ErpWebViewScreen> {
   InAppWebViewController? webViewController;
+  PullToRefreshController? pullToRefreshController;
   double progress = 0;
-  
+
   // URL DE TU ERP EN LÍNEA
-  final String erpUrl = "https://control-financiero-gamma.vercel.app/login"; 
+  final String erpUrl = "https://control-financiero-gamma.vercel.app/login";
+
+  @override
+  void initState() {
+    super.initState();
+    // Desliza hacia abajo para recargar la página
+    pullToRefreshController = PullToRefreshController(
+      settings: PullToRefreshSettings(color: Colors.blue),
+      onRefresh: () => webViewController?.reload(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      // Puedes quitar el AppBar si quieres que el ERP ocupe TODA la pantalla
-      appBar: AppBar(
-        title: const Text('Mi ERP en Línea'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => webViewController?.reload(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        // El botón atrás navega dentro del ERP; si no hay historial, cierra la app
+        if (await webViewController?.canGoBack() ?? false) {
+          webViewController?.goBack();
+        } else if (context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Stack(
+            children: [
+              InAppWebView(
+                initialUrlRequest: URLRequest(url: WebUri(erpUrl)),
+                initialSettings: InAppWebViewSettings(
+                  useShouldOverrideUrlLoading: true,
+                  mediaPlaybackRequiresUserGesture: false,
+                  javaScriptEnabled: true, // Requerido para la mayoría de ERPs modernos
+                  domStorageEnabled: true, // Permite guardar sesiones/cookies locales
+                  useHybridComposition: true,
+                ),
+                pullToRefreshController: pullToRefreshController,
+                onWebViewCreated: (controller) {
+                  webViewController = controller;
+                },
+                onLoadStop: (controller, url) {
+                  pullToRefreshController?.endRefreshing();
+                },
+                onReceivedError: (controller, request, error) {
+                  pullToRefreshController?.endRefreshing();
+                },
+                onProgressChanged: (controller, progressPercentage) {
+                  if (progressPercentage == 100) {
+                    pullToRefreshController?.endRefreshing();
+                  }
+                  setState(() {
+                    progress = progressPercentage / 100;
+                  });
+                },
+              ),
+              // Barra de progreso que desaparece cuando la carga llega al 100%
+              progress < 1.0
+                  ? LinearProgressIndicator(value: progress, color: Colors.blue)
+                  : const SizedBox.shrink(),
+            ],
           ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          InAppWebView(
-            initialUrlRequest: URLRequest(url: WebUri(erpUrl)),
-            initialSettings: InAppWebViewSettings(
-              useShouldOverrideUrlLoading: true,
-              mediaPlaybackRequiresUserGesture: false,
-              javaScriptEnabled: true, // Requerido para la mayoría de ERPs modernos
-              domStorageEnabled: true, // Permite guardar sesiones/cookies locales
-              useHybridComposition: true,
-            ),
-            onWebViewCreated: (controller) {
-              webViewController = controller;
-            },
-            onProgressChanged: (controller, progressPercentage) {
-              setState(() {
-                progress = progressPercentage / 100;
-              });
-            },
-          ),
-          // Barra de progreso que desaparece cuando la carga llega al 100%
-          progress < 1.0
-              ? LinearProgressIndicator(value: progress, color: Colors.blue)
-              : const SizedBox.shrink(),
-        ],
+        ),
       ),
     );
   }
